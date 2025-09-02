@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: ordering-system
+server:
+  port: 8080
+
+
