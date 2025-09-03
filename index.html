@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ordering System Tester</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 20px; }
+    h2 { margin-top: 28px; }
+    fieldset { margin: 12px 0; padding: 12px; }
+    input, button, select, textarea { padding: 6px 8px; margin: 4px; }
+    pre { background:#f6f8fa; padding:10px; border-radius:6px; max-height:280px; overflow:auto; }
+    .row { display:flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .col { display:flex; flex-direction: column; }
+  </style>
+</head>
+<body>
+  <h1>Ordering System</h1>
+
+  <h2>选座</h2>
+  <div class="row">
+    <input id="username" placeholder="username" />
+    <select id="freeTableSelect"></select>
+    <button onclick="refreshFreeTables()">刷新空桌</button>
+    <button onclick="seatFromSelect()">选座</button>
+    <button onclick="listUsers()">查看所有用户</button>
+  </div>
+
+  <h2>菜单</h2>
+  <div class="row">
+    <button onclick="loadMenu()">刷新菜单</button>
+  </div>
+  <div id="menuGrid" style="display:grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin:8px 0;"></div>
+
+  <h2>购物车</h2>
+  <div id="cart">
+    <div id="cartItems"></div>
+    <div class="row">
+      <span id="cartTotal">合计: 0</span>
+      <button onclick="submitCart()">提交整单</button>
+      <button onclick="checkout()">结账并释放桌位</button>
+    </div>
+  </div>
+
+  <h2>后厨</h2>
+  <div class="row">
+    <button onclick="queueList()">查看队列</button>
+    <button onclick="queueNext()">下一单</button>
+    <button onclick="queueTake()">取走制作</button>
+  </div>
+  <div id="kitchenQueue"></div>
+
+  <h2>管理（可选）</h2>
+  <div class="row">
+    <input id="dishName" placeholder="name" />
+    <input id="dishPrice" type="number" placeholder="price" />
+    <input id="dishDesc" placeholder="description" />
+    <input id="dishImg" placeholder="imageUrl" />
+    <button onclick="addDish()">新增菜品</button>
+  </div>
+  <div class="row">
+    <input id="soldoutId" type="number" placeholder="dish id" />
+    <select id="soldoutFlag">
+      <option value="true">sold out</option>
+      <option value="false">available</option>
+    </select>
+    <button onclick="soldOut()">上/下架</button>
+  </div>
+
+  <h2>响应</h2>
+  <pre id="out"></pre>
+
+  <script>
+    const out = document.getElementById('out');
+    const menuGrid = document.getElementById('menuGrid');
+    const freeTableSelect = document.getElementById('freeTableSelect');
+    const cartItems = document.getElementById('cartItems');
+    const cartTotal = document.getElementById('cartTotal');
+    const kitchenQueue = document.getElementById('kitchenQueue');
+
+    function show(res) { out.textContent = typeof res === 'string' ? res : JSON.stringify(res, null, 2); }
+    function uname() { return document.getElementById('username').value || 'alice'; }
+
+    const state = { menu: [], cart: [] };
+
+    async function api(path, options) {
+      const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, options));
+      const txt = await res.text();
+      try { return txt ? JSON.parse(txt) : { status: res.status }; } catch { return txt || { status: res.status }; }
+    }
+
+    function renderMenu() {
+      menuGrid.innerHTML = '';
+      state.menu.forEach(d => {
+        const card = document.createElement('div');
+        card.style.border = '1px solid #e5e7eb';
+        card.style.borderRadius = '8px';
+        card.style.padding = '10px';
+        card.innerHTML = `
+          <div style="font-weight:600;">${d.name} ${d.soldOut ? '<span style="color:#dc2626">(售罄)</span>' : ''}</div>
+          <div style="color:#6b7280; font-size:12px;">¥${d.price}</div>
+          ${d.imageUrl ? `<img src="${d.imageUrl}" alt="${d.name}" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin:6px 0;" />` : ''}
+          <div style="color:#374151; font-size:12px; min-height: 32px;">${d.description || ''}</div>
+          <button ${d.soldOut ? 'disabled' : ''} data-id="${d.id}">加入购物车</button>
+        `;
+        card.querySelector('button').addEventListener('click', () => addToCart(d));
+        menuGrid.appendChild(card);
+      });
+    }
+
+    function renderCart() {
+      cartItems.innerHTML = '';
+      let total = 0;
+      state.cart.forEach(item => {
+        const dish = state.menu.find(m => m.id === item.dishId) || { name: `#${item.dishId}`, price: item.unitPrice || 0 };
+        const row = document.createElement('div');
+        row.className = 'row';
+        const line = (item.unitPrice || dish.price) * item.quantity;
+        total += line;
+        row.innerHTML = `
+          <span style="min-width:140px;">${dish.name}</span>
+          <span>¥${dish.price}</span>
+          <button data-id="${item.dishId}" data-delta="-1">-</button>
+          <span>x ${item.quantity}</span>
+          <button data-id="${item.dishId}" data-delta="1">+</button>
+          <button data-id="${item.dishId}" data-remove="1">移除</button>
+          <span>小计 ¥${line}</span>
+        `;
+        row.querySelectorAll('button').forEach(btn => {
+          if (btn.dataset.remove) {
+            btn.addEventListener('click', () => removeFromCart(item.dishId));
+          } else {
+            btn.addEventListener('click', () => changeQty(item.dishId, Number(btn.dataset.delta)));
+          }
+        });
+        cartItems.appendChild(row);
+      });
+      cartTotal.textContent = `合计: ¥${total}`;
+    }
+
+    function addToCart(dish) {
+      if (dish.soldOut) return;
+      const found = state.cart.find(i => i.dishId === dish.id);
+      if (found) {
+        found.quantity += 1;
+      } else {
+        state.cart.push({ dishId: dish.id, quantity: 1, unitPrice: dish.price });
+      }
+      renderCart();
+    }
+
+    function changeQty(dishId, delta) {
+      const found = state.cart.find(i => i.dishId === dishId);
+      if (!found) return;
+      found.quantity = Math.max(1, found.quantity + delta);
+      renderCart();
+    }
+
+    function removeFromCart(dishId) {
+      state.cart = state.cart.filter(i => i.dishId !== dishId);
+      renderCart();
+    }
+
+    async function loadMenu() {
+      const res = await api('/api/menu');
+      state.menu = Array.isArray(res) ? res : [];
+      renderMenu();
+      show(res);
+    }
+
+    async function refreshFreeTables() {
+      const list = await api('/api/user/tables/free');
+      if (!Array.isArray(list)) { show(list); return; }
+      freeTableSelect.innerHTML = list.map(n => `<option value="${n}">桌 ${n}</option>`).join('');
+    }
+
+    async function seatFromSelect() {
+      const table = Number(freeTableSelect.value || 1);
+      const body = { username: uname(), tableNumber: table };
+      const res = await api('/api/user/seat', { method: 'POST', body: JSON.stringify(body) });
+      show(res);
+      await refreshFreeTables();
+    }
+
+    async function listUsers() { show(await api('/api/user')); }
+
+    async function submitCart() {
+      if (state.cart.length === 0) { alert('购物车为空'); return; }
+      const payload = state.cart.map(i => ({ dishId: i.dishId, quantity: i.quantity }));
+      const res = await api(`/api/user/${encodeURIComponent(uname())}/submit`, { method: 'POST', body: JSON.stringify(payload) });
+      show(res);
+      // 不清空购物车以便加单；如需清空，取消注释下一行
+      // state.cart = []; renderCart();
+    }
+
+    async function checkout() {
+      const res = await fetch(`/api/user/${encodeURIComponent(uname())}/checkout`, { method: 'POST' });
+      show({ status: res.status });
+      state.cart = []; renderCart();
+      await refreshFreeTables();
+    }
+
+    async function queueList() {
+      const q = await api('/api/kitchen/queue');
+      show(q);
+      kitchenQueue.textContent = JSON.stringify(q, null, 2);
+    }
+    async function queueNext() { show(await api('/api/kitchen/next')); }
+    async function queueTake() { show(await api('/api/kitchen/take', { method: 'POST' })); }
+
+    async function addDish() {
+      const body = {
+        name: document.getElementById('dishName').value,
+        price: Number(document.getElementById('dishPrice').value || 0),
+        description: document.getElementById('dishDesc').value,
+        imageUrl: document.getElementById('dishImg').value,
+        soldOut: false
+      };
+      const res = await api('/api/menu', { method: 'POST', body: JSON.stringify(body) });
+      show(res);
+      await loadMenu();
+    }
+    async function soldOut() {
+      const id = Number(document.getElementById('soldoutId').value);
+      const flag = document.getElementById('soldoutFlag').value;
+      const res = await fetch(`/api/menu/${id}/soldout/${flag}`, { method: 'POST' });
+      show({ status: res.status });
+      await loadMenu();
+    }
+
+    // 初始化
+    (async function init() {
+      await Promise.all([loadMenu(), refreshFreeTables(), queueList()]);
+      setInterval(queueList, 5000);
+    })();
+  </script>
+</body>
+</html>
+
+
