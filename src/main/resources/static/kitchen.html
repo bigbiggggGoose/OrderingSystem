@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>后厨/管理 - Ordering System</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 20px; }
+    h1 { margin: 0 0 8px; }
+    .row { display:flex; flex-wrap: wrap; gap:8px; align-items:center; }
+    table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+    th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; }
+    th { background: #f9fafb; }
+    pre { background:#f6f8fa; padding:10px; border-radius:6px; max-height:280px; overflow:auto; }
+  </style>
+</head>
+<body>
+  <div class="row">
+    <h1>后厨/管理</h1>
+    <a href="/order.html">← 返回点单</a>
+  </div>
+
+  <h2>队列</h2>
+  <div class="row">
+    <button onclick="refreshQueue()">刷新队列</button>
+    <button onclick="takeNext()">取走制作</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th>单号</th><th>用户名</th><th>桌号</th><th>创建时间</th><th>明细</th></tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+  <h2>菜品管理（可选）</h2>
+  <div class="row">
+    <input id="dishName" placeholder="name" />
+    <input id="dishPrice" type="number" placeholder="price" />
+    <input id="dishDesc" placeholder="description" />
+    <input id="dishImg" placeholder="imageUrl" />
+    <button onclick="addDish()">新增菜品</button>
+  </div>
+  <div class="row">
+    <input id="soldoutId" type="number" placeholder="dish id" />
+    <select id="soldoutFlag">
+      <option value="true">sold out</option>
+      <option value="false">available</option>
+    </select>
+    <button onclick="soldOut()">上/下架</button>
+  </div>
+
+  <h2>响应</h2>
+  <pre id="out"></pre>
+
+  <script>
+    const out = document.getElementById('out');
+    const tbody = document.getElementById('tbody');
+    function show(res) { out.textContent = typeof res === 'string' ? res : JSON.stringify(res, null, 2); }
+
+    async function api(path, options) {
+      const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, options));
+      const txt = await res.text();
+      try { return txt ? JSON.parse(txt) : { status: res.status }; } catch { return txt || { status: res.status }; }
+    }
+
+    function renderQueue(rows) {
+      tbody.innerHTML = '';
+      rows.forEach(o => {
+        const tr = document.createElement('tr');
+        const items = (o.items || []).map(i => `#${i.dishId} x${i.quantity}`).join(', ');
+        const created = o.createdAt ? new Date(o.createdAt).toLocaleString() : '';
+        tr.innerHTML = `<td>${o.orderId||''}</td><td>${o.username||''}</td><td>${o.tableNumber||''}</td><td>${created}</td><td>${items}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function refreshQueue() {
+      const q = await api('/api/kitchen/queue');
+      show(q);
+      if (Array.isArray(q)) renderQueue(q);
+    }
+    async function takeNext() {
+      const r = await api('/api/kitchen/take', { method: 'POST' });
+      show(r);
+      await refreshQueue();
+    }
+
+    async function addDish() {
+      const body = {
+        name: document.getElementById('dishName').value,
+        price: Number(document.getElementById('dishPrice').value || 0),
+        description: document.getElementById('dishDesc').value,
+        imageUrl: document.getElementById('dishImg').value,
+        soldOut: false
+      };
+      const res = await api('/api/menu', { method: 'POST', body: JSON.stringify(body) });
+      show(res);
+    }
+    async function soldOut() {
+      const id = Number(document.getElementById('soldoutId').value);
+      const flag = document.getElementById('soldoutFlag').value;
+      const res = await fetch(`/api/menu/${id}/soldout/${flag}`, { method: 'POST' });
+      show({ status: res.status });
+    }
+
+    // 初始化
+    (async function init(){ await refreshQueue(); setInterval(refreshQueue, 5000); })();
+  </script>
+</body>
+</html>
+
+

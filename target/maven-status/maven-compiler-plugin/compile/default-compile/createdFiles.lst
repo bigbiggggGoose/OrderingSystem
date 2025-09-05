@@ -1,3 +1,13 @@
-com\example\ordering\dto\Restaurant.class
-com\example\ordering\dto\User.class
+com\example\ordering\server\Menu.class
+com\example\ordering\service\OrderQueueService.class
+com\example\ordering\dto\SeatRequest.class
+com\example\ordering\service\TableService.class
+com\example\ordering\dto\OrderItem.class
+com\example\ordering\Controller\Kitchen.class
+com\example\ordering\service\MenuService.class
 com\example\ordering\OrderingSystemApplication.class
+com\example\ordering\dto\Order.class
+com\example\ordering\dto\User.class
+com\example\ordering\Controller\AddUser.class
+com\example\ordering\service\UserService.class
+com\example\ordering\dto\Dish.class
