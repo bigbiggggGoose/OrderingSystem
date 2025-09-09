@@ -1,4 +1,4 @@
-package com.example.ordering.Controller;
+package com.example.ordering.controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.ordering.dto.OrderItem;
+import jakarta.validation.Valid;
 import com.example.ordering.dto.User;
 import com.example.ordering.service.MenuService;
 import com.example.ordering.service.UserService;
@@ -27,12 +28,12 @@ public class AddUser {
     }
 
     @PostMapping("/seat")
-    public User seat(@RequestBody SeatRequest request) {
+    public User seat(@Valid @RequestBody SeatRequest request) {
         return userService.seat(request);
     }
 
     @PostMapping("/{username}/order")
-    public User order(@PathVariable String username, @RequestBody OrderItem request) {
+    public User order(@PathVariable String username, @Valid @RequestBody OrderItem request) {
         int price = menuService.findById(request.getDishId())
             .map(d -> d.getPrice())
             .orElse(0);
@@ -50,7 +51,7 @@ public class AddUser {
     }
 
     @PostMapping("/{username}/submit")
-    public com.example.ordering.dto.Order submit(@PathVariable String username, @RequestBody java.util.List<OrderItem> requests) {
+    public com.example.ordering.dto.Order submit(@PathVariable String username, @Valid @RequestBody java.util.List<OrderItem> requests) {
         return userService.submit(username, requests, id -> menuService.findById(id).map(d -> d.getPrice()).orElse(0));
     }
 
